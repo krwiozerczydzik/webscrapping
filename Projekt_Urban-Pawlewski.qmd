@@ -1,0 +1,430 @@
+---
+title: "Wyniki wyborów do Sejmu RP w 2019 roku - analiza"
+autor: "Michał Pawlewski & Wojciech Urban"
+format: html
+editor: visual
+---
+
+## Wczytanie pakietów
+
+```{r message=FALSE, warning=FALSE}
+# wczytanie pakietów
+install.packages(
+  c(
+    'dplyr',
+    'reactable',
+    'reactablefmtr',
+    'rcartocolor',
+    'htmltools',
+    'ggplot2',
+    'ggpol',
+    'readxl',
+    'tidyverse',
+    'broom',
+    'maptools',
+    'leaflet'
+  )
+)
+# wgranie bibliotek
+library(dplyr)
+library(reactable) # tablice
+library(reactablefmtr) # tablice
+library(rcartocolor) # palety kolorów
+library(htmltools)
+library(ggplot2)
+library(ggpol)
+library(readxl)
+library(tidyverse)
+library(rgdal)
+library(broom)
+library(maptools)
+library(leaflet)
+```
+
+## Wczytanie danych z wynikami wyborów
+
+```{r message=FALSE, warning=FALSE}
+dane <- read.csv(file = 'wyniki_gl_na_listy_po_obwodach_sejm.csv',
+                 sep = ';',
+                 stringsAsFactors = FALSE)
+```
+
+## Przygotowanie tablicy
+
+#### Obróbka danych
+
+```{r message=FALSE, warning=FALSE}
+wyniki <-
+  dane %>%
+  select(10, 12, 32, 33, 35, 36, 38, 40) %>%
+  rename_all(function(.) {
+    c('woj', 'uprawnieni', 'glosy', 'KO', 'Konf', 'PSL', 'PiS', 'SLD')
+  }) %>%
+  mutate_at(vars(uprawnieni, glosy, KO, Konf, PiS, PSL, SLD), as.integer)
+
+# usuwanie niewygodnych braków danych
+wyniki <- wyniki[!(is.na(wyniki$woj) | wyniki$woj == ""),]
+
+wyniki <-
+  wyniki %>%
+  group_by(woj) %>%
+  summarize(
+    uprawnieni = sum(uprawnieni),
+    glosy = sum(glosy),
+    # liczenie wyników poszczególnych komitetów wyborczych
+    PiS = round(sum(PiS) / sum(glosy) * 100, 2),
+    KO = round(sum(KO) / sum(glosy) * 100, 2),
+    SLD = round(sum(SLD) / sum(glosy) * 100, 2),
+    PSL = round(sum(PSL) / sum(glosy) * 100, 2),
+    Konf = round(sum(Konf) / sum(glosy) * 100, 2),
+    .groups = 'drop'
+  ) %>%
+  mutate(frekwencja = round(glosy / uprawnieni * 100, 2)) %>%
+  select(-uprawnieni,-glosy)
+head(wyniki)
+
+```
+
+#### Dołączenie obrazków do danych
+
+```{r message=FALSE, warning=FALSE}
+# herb każdego województwa pobierany jest z wikipedii
+wyniki <- wyniki %>%
+  mutate(img = NA) %>%
+  # select(8,1:7) %>%
+  mutate(
+    img = case_when(
+      woj == "dolnośląskie" ~
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7a/POL_wojew%C3%B3dztwo_dolno%C5%9Bl%C4%85skie_COA.svg/1024px-POL_wojew%C3%B3dztwo_dolno%C5%9Bl%C4%85skie_COA.svg.png",
+      woj == "kujawsko-pomorskie" ~
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/7/79/POL_wojew%C3%B3dztwo_kujawsko-pomorskie_COA.svg/1024px-POL_wojew%C3%B3dztwo_kujawsko-pomorskie_COA.svg.png",
+      woj == 'lubelskie' ~
+        'https://upload.wikimedia.org/wikipedia/commons/thumb/4/4d/POL_wojew%C3%B3dztwo_lubelskie_COA.svg/1024px-POL_wojew%C3%B3dztwo_lubelskie_COA.svg.png',
+      woj == 'lubuskie' ~
+        'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c6/POL_wojew%C3%B3dztwo_lubuskie_COA.svg/1024px-POL_wojew%C3%B3dztwo_lubuskie_COA.svg.png',
+      woj == 'łódzkie' ~
+        'https://upload.wikimedia.org/wikipedia/commons/thumb/a/af/POL_wojew%C3%B3dztwo_%C5%82%C3%B3dzkie_COA.svg/1024px-POL_wojew%C3%B3dztwo_%C5%82%C3%B3dzkie_COA.svg.png',
+      woj == 'małopolskie' ~
+        'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d2/POL_wojew%C3%B3dztwo_ma%C5%82opolskie_COA.svg/1024px-POL_wojew%C3%B3dztwo_ma%C5%82opolskie_COA.svg.png',
+      woj == 'mazowieckie' ~
+        'https://upload.wikimedia.org/wikipedia/commons/thumb/6/69/POL_wojew%C3%B3dztwo_mazowieckie_COA.svg/1024px-POL_wojew%C3%B3dztwo_mazowieckie_COA.svg.png',
+      woj == 'opolskie' ~
+        'https://upload.wikimedia.org/wikipedia/commons/thumb/5/57/POL_wojew%C3%B3dztwo_opolskie_COA.svg/1024px-POL_wojew%C3%B3dztwo_opolskie_COA.svg.png',
+      woj == 'podkarpackie' ~
+        'https://upload.wikimedia.org/wikipedia/commons/thumb/6/61/POL_wojew%C3%B3dztwo_podkarpackie_COA.svg/1024px-POL_wojew%C3%B3dztwo_podkarpackie_COA.svg.png',
+      woj == 'podlaskie' ~
+        'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/POL_wojew%C3%B3dztwo_podlaskie_COA.svg/1024px-POL_wojew%C3%B3dztwo_podlaskie_COA.svg.png',
+      woj == 'pomorskie' ~
+        'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3b/POL_wojew%C3%B3dztwo_pomorskie_COA.svg/1024px-POL_wojew%C3%B3dztwo_pomorskie_COA.svg.png',
+      woj == 'śląskie' ~
+        'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c9/POL_wojew%C3%B3dztwo_%C5%9Bl%C4%85skie_COA.svg/1024px-POL_wojew%C3%B3dztwo_%C5%9Bl%C4%85skie_COA.svg.png',
+      woj == 'świętokrzyskie' ~
+        'https://upload.wikimedia.org/wikipedia/commons/thumb/3/36/POL_wojew%C3%B3dztwo_%C5%9Bwi%C4%99tokrzyskie_COA.svg/1024px-POL_wojew%C3%B3dztwo_%C5%9Bwi%C4%99tokrzyskie_COA.svg.png',
+      woj == 'warmińsko-mazurskie' ~
+        'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c0/POL_wojew%C3%B3dztwo_warmi%C5%84sko-mazurskie_COA.svg/1024px-POL_wojew%C3%B3dztwo_warmi%C5%84sko-mazurskie_COA.svg.png',
+      woj == 'wielkopolskie' ~
+        'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7b/POL_wojew%C3%B3dztwo_wielkopolskie_COA.svg/1024px-POL_wojew%C3%B3dztwo_wielkopolskie_COA.svg.png',
+      woj == 'zachodniopomorskie' ~
+        'https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/POL_wojew%C3%B3dztwo_zachodniopomorskie_COA.svg/1024px-POL_wojew%C3%B3dztwo_zachodniopomorskie_COA.svg.png',
+      TRUE ~ "NA"
+    )
+  )
+```
+
+#### Tworzenie tablicy
+
+Tablica prezentuje wyniki oddane na poszczególne komietety w województwach wraz z całkowitą frekwencją w danym województwie.
+
+```{r message=FALSE, warning=FALSE}
+tablica <-
+  reactable(
+    # korztstamy z pakietu reactable
+    wyniki,
+    pagination = FALSE,
+    style = list(fontFamily = "Work Sans, sans-serif"),
+    columnGroups = list(colGroup(
+      name = "Wyniki komitetów wyborczych [%]",
+      columns = c('KO', 'Konf', 'PiS', 'PSL', 'SLD')
+    )),
+    columns = list(
+      img = colDef(
+        name = 'Województwo',
+        width = 225,
+        
+        cell = embed_img(wyniki,
+                         label = "woj",
+                         horizontal_align = "left")
+      ),
+      
+      woj = colDef(show = FALSE),
+      
+      # dołączanie kolejnych kolumn z wynikami kolejnych komitetów wyborczych
+      KO = colDef(
+        name = 'KO',
+        width = 100,
+        align = 'center',
+        cell = data_bars(
+          select(wyniki, 2:6),
+          number_fmt = scales::label_number(accuracy = 0.01),
+          max_value = 100,
+          text_position = 'outside-end',
+          fill_color = 'orange',
+          fill_opacity = 1,
+          text_size = 12
+        )
+      ),
+      
+      
+      PiS = colDef(
+        name = 'PiS',
+        width = 100,
+        align = 'center',
+        cell = data_bars(
+          select(wyniki, 2:6),
+          number_fmt = scales::label_number(accuracy = 0.01),
+          max_value = 100,
+          text_position = 'outside-end',
+          fill_color = 'darkblue',
+          fill_opacity = 1,
+          text_size = 12
+        )
+      ),
+      
+      
+      SLD = colDef(
+        name = 'SLD',
+        width = 100,
+        align = 'center',
+        cell = data_bars(
+          select(wyniki, 2:6),
+          number_fmt = scales::label_number(accuracy = 0.01),
+          max_value = 100,
+          text_position = 'outside-end',
+          fill_color = 'red',
+          fill_opacity = 1,
+          text_size = 12
+        )
+      ),
+      
+      
+      PSL = colDef(
+        name = 'PSL',
+        width = 100,
+        align = 'center',
+        cell = data_bars(
+          select(wyniki, 2:6),
+          number_fmt = scales::label_number(accuracy = 0.01),
+          max_value = 100,
+          text_position = 'outside-end',
+          fill_color = 'green',
+          fill_opacity = 1,
+          text_size = 12
+        )
+      ),
+      
+      
+      Konf = colDef(
+        name = 'Konf',
+        align = 'center',
+        width = 100,
+        cell = data_bars(
+          select(wyniki, 2:6),
+          number_fmt = scales::label_number(accuracy = 0.01),
+          max_value = 100,
+          text_position = 'outside-end',
+          fill_color = 'black',
+          fill_opacity = 1,
+          text_size = 12
+        )
+      ),
+      
+      # dołączenie kolumny z frekwencją
+      frekwencja = colDef(
+        name = 'Frekwencja [%]',
+        headerStyle = list(align = 'center'),
+        width = 150,
+        align = 'center',
+        style = color_scales(
+          select(wyniki, 7),
+          span = TRUE,
+          colors = carto_pal(7, 'Teal'),
+          opacity = 0.6,
+          text_size = 12
+        ),
+        format = colFormat(digits = 2)
+      )
+    )
+  )
+
+# wyświetlenie tablicy
+tablica
+```
+
+## Wykres frekwencji
+
+#### Przygotowanie danych
+
+```{r message=FALSE, warning=FALSE}
+frekwencja <-
+  dane %>%
+  select(12, 32, 5, 10) %>%
+  rename_all(function(.) {
+    c('uprawnieni', 'głosy', 'typ', 'woj')
+  }) %>%
+  mutate_at(vars(uprawnieni, głosy), as.integer) %>%
+  group_by(woj, typ) %>%
+  summarize(uprawnieni = sum(uprawnieni),
+            głosy = sum(głosy)) %>%
+  # wyniki dla obwodów wyborczych na statkach i zagranicą nas nieinteresują
+  filter(typ != 'statek' & typ != 'zagranica') %>%
+  mutate(frekwencja = round(głosy / uprawnieni * 100, 2))
+
+frekwencja <-
+  frekwencja[!(is.na(frekwencja$woj) | frekwencja$woj == ""),]
+
+head(frekwencja)
+```
+
+#### Tworzenie wykresu
+
+Tworzymy wykres słupkowy frekwencji w wyborach w województwach w podziale na typy obszarów (wieś, miasto-wieś i miasto).
+
+Ze względu na ograniczenia ze strony Posit Cloud (pewna nieczytelność), zdecydowaliśmy się na wygenerowanie wykresu w osobnym pliku jako obrazek JPG, który będzie załączony wraz z tym plikem.
+
+```{r message=FALSE, warning=FALSE}
+# parametry obrazka
+png(filename = "frekwencja.png",
+    width = 1200,
+    height = 400)
+
+ggplot(frekwencja, aes(fill = typ, y = frekwencja, x = woj)) +
+  geom_col(width = 0.7,
+           position = position_dodge(0.8)) +
+  # nazwy dla osi:
+  xlab("Województwo") +
+  ylab("Frekwencja [%]") +
+  # ustawienia wykresu
+  theme(legend.position = "bottom",
+        plot.title = element_text(hjust = 0.5)) +
+  theme(
+    axis.text.x = element_text(
+      angle = 15,
+      vjust = 0.6  ,
+      size = 10
+    ),
+    panel.grid.major.x = element_blank()
+  ) +
+  # tytuł wykresu
+  ggtitle("Frekwencja w wyborach do Sejmu RP w 2019 roku") +
+  # dobranie kolorów dla kategorii Typ obszaru
+  scale_fill_manual(values = c("darkcyan", "firebrick", 'darkolivegreen4'),
+                    name = 'Typ obszaru') 
+```
+
+## Wykres podziału mandatów w Sejmie
+
+```{r message=FALSE, warning=FALSE}
+df <- tibble(
+  partie = factor(
+    c(
+      "Mniejszość Niemiecka",
+      "Konfederacja",
+      "PSL",
+      "SLD",
+      "KO",
+      "PiS"
+    ),
+    
+    #listy z nazwami partii politycznych
+    levels = c(
+      "Mniejszość Niemiecka",
+      "Konfederacja",
+      "PSL",
+      "SLD",
+      "KO",
+      "PiS"
+    )
+  ),
+  
+  mandaty = c(1, 11, 30, 49, 134, 235),
+  #liczba mandatów w sejmie
+  kolory = c(#kolory nanoszone na wykres
+             "#FFFF00",
+             "#000000",
+             "#6AB023",
+             "#D32D41",
+             "#FAA61A",
+             "#0032FF")
+)
+
+#utworzenie wykresu i naniesienie na niego danych
+ggplot(df) +
+  geom_parliament(aes(seats = mandaty, fill = partie), colour = "#FFFFFF") +
+  scale_fill_manual(
+    values = df$kolory,
+    labels = df$partie,
+    guide = guide_legend(reverse = TRUE)
+  ) +
+  labs(title = "Wybory do Sejmu w 2019 roku",
+       subtitle = "Podział miejsc w parlamencie",
+       fill = NULL) +
+  coord_fixed() +
+  theme_void() +
+  theme(
+    plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5),
+    legend.position = "bottom"
+  )
+```
+
+## Wykres pokazujący komisje z najwyższą frekwencją
+
+#### Przygotowanie danych
+
+```{r message=FALSE, warning=FALSE}
+# wczytanie pliku z frekwencją
+frekwencja_max <-
+  read_csv('/cloud/project/frekwencja_markery_max.csv')
+
+frekwencja_max
+
+
+# dodanie koloru znaczników z komisjami na mapie
+frekwencja_max$color <-
+  "green"
+  
+frekwencja_max
+```
+
+#### Utworzenie mapy
+
+Mapę będzie można dowolnie przesuwać i skalować. Kliknięcie w komitet umożliwi zobaczenie danych na jego temat.
+
+```{r message=FALSE, warning=FALSE}
+#utworzenie mapy świata, mapę można dowolnie przesuwać i skalować
+map <- leaflet() %>%
+  addTiles()
+
+# dodanie znaczników w odpowiednie miejsca na mapie
+map <- leaflet(data = frekwencja_max) %>%
+  addTiles() %>%
+  addCircleMarkers(
+    lng = ~ longitude,
+    lat = ~ latitude,
+    label = ~ paste("Frekwencja: ", frequency),
+    color = ~ color,
+    popup = ~ paste(
+      "Komisja: ",
+      "<br/>",
+      name,
+      "<br/>",
+      "---" ,
+      "<br/>",
+      "Frekwencja: ",
+      "<br/>",
+      frequency
+    )
+  )
+
+map
+```

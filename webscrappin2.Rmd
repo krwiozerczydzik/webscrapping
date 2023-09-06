@@ -1,0 +1,130 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+install.packages("tidyverse")
+install.packages("rvest")
+
+library(rvest)
+library(jsonlite)
+library(tidyverse)
+```
+
+```{r}
+nabory <-
+  'https://nabory.kprm.gov.pl/wyniki-naborow?AdResult%5BpagesCnt%5D=20&AdResult%5BisAdvancedMode%5D=&AdResult%5Bsort%5D=1&AdResult%5Bid%5D=&AdResult%5Bid_institution%5D=&AdResult%5Bid_institution_position%5D='
+doc <- read_html(nabory)
+```
+
+```{r}
+link_wynik <- doc %>%
+  html_nodes("li.row") %>%
+  html_nodes("a") %>%
+  html_attr("href")
+
+numer <- doc %>%
+  html_nodes("li.row") %>%
+  html_nodes("span.id") %>%
+  html_text()
+
+stanowisko <- doc %>%
+  html_nodes("li.row") %>%
+  html_nodes("strong.title") %>%
+  html_text()
+
+pracodawca <- doc %>%
+  html_nodes("li.row") %>%
+  html_nodes("div > a > div > div.col-2 > div > div:nth-child(2)") %>%
+  html_nodes("b") %>%
+  html_text()
+
+miejsce <- doc %>%
+  html_nodes("li.row") %>%
+  html_nodes("div > a > div > div.col-2 > div > div:nth-child(3)") %>%
+  html_nodes("b") %>%
+  html_text()
+
+data_publikacji <- doc %>%
+  html_nodes("li.row") %>%
+  html_nodes("div > a > div > div.col-2 > div > div:nth-child(4)") %>%
+  html_nodes("b") %>%
+  html_text()
+
+data_ogloszenia <- rep()
+
+data_ogloszenia_f <- function(n) {
+  data_ogloszenia[n] <- link_wynik[n] %>%
+    read_html() %>%
+    html_nodes(
+      'body > main > div > div.container > article > section > div:nth-child(2) > ul > li:nth-child(1) > div'
+    ) %>%
+    html_text2() %>%
+    str_replace_all("([\n])", " ") %>%
+    str_replace_all("  ", " ")
+}
+
+data_wyniku <- rep()
+
+data_wyniku_f <- function(n) {
+  data_wyniku[n] <- link_wynik[n] %>%
+    read_html() %>%
+    html_nodes(
+      'body > main > div > div.container > article > section > div:nth-child(2) > ul > li:nth-child(2) > div'
+    ) %>%
+    html_text2() %>%
+    str_replace_all("([\n])", " ") %>%
+    str_replace_all("  ", " ")
+}
+
+status <- rep()
+
+status_f <- function(n) {
+  status[n] <- link_wynik[n] %>%
+    read_html() %>%
+    html_nodes(
+      'body > main > div > div.container > article > section > div:nth-child(2) > ul > li.cir-wr > div > strong > span'
+    ) %>%
+    html_text2() %>%
+    str_replace_all("([\n])", " ") %>%
+    str_replace_all("  ", " ")
+}
+
+
+
+link_ogloszenie <- rep()
+
+link_ogloszenie_f <- function(n) {
+  link_ogloszenie[n] <- paste(
+    'https://nabory.kprm.gov.pl',
+    link_wynik[n] %>%
+      read_html() %>%
+      html_nodes(
+        'body > main > div > div.container > article > section > div:nth-child(1) > div > h4 > a'
+      ) %>%
+      html_attr("href"),
+    sep = ""
+  )
+}
+
+for (n in 1:20) {
+  link_wynik[n] <-
+    paste('https://nabory.kprm.gov.pl', link_wynik[n], sep = '')
+  data_ogloszenia_f(n)
+  data_ogloszenia <- append(data_ogloszenia, data_ogloszenia_f(n))
+  data_wyniku <- append(data_wyniku, data_wyniku_f(n))
+  status <- append(status, status_f(n))
+  link_ogloszenie <- append(link_ogloszenie, link_ogloszenie_f(n))
+}
+
+
+```
+
+
+```{r}
+df <- data.frame(numer, stanowisko, pracodawca, miejsce, data_publikacji, data_ogloszenia, data_wyniku, status, link_wynik, link_ogloszenie)
+df
+```
+
+
